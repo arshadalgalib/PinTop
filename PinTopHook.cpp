@@ -26,6 +26,10 @@ void UpdateSystemMenu(HWND hwnd, HMENU menu) {
 void ToggleTopmost(HWND hwnd) {
     if (!hwnd || !IsWindow(hwnd)) return;
 
+    // A system-menu command applies to the root-level window.
+    hwnd = GetAncestor(hwnd, GA_ROOT);
+    if (!hwnd || !IsWindow(hwnd)) return;
+
     const LONG_PTR exStyle = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
     const bool currentlyTopmost = (exStyle & WS_EX_TOPMOST) != 0;
 
@@ -47,14 +51,16 @@ LRESULT CALLBACK CallWndProc(int code, WPARAM wParam, LPARAM lParam) {
     return CallNextHookEx(g_callWndHook, code, wParam, lParam);
 }
 
-// WH_CBT sees the system command before the target window receives it.
-// Returning non-zero consumes the custom command so it cannot be ignored
-// by the target application's own WM_SYSCOMMAND handler.
+// For HCBT_SYSCOMMAND, lParam contains mouse coordinates, NOT an HWND.
+// Because this hook runs on the thread processing the system menu,
+// GetActiveWindow() identifies that thread's active window.
 LRESULT CALLBACK CbtProc(int code, WPARAM wParam, LPARAM lParam) {
     if (code == HCBT_SYSCOMMAND &&
         (static_cast<UINT>(wParam) & 0xFFF0u) == kPinTopSystemCommand) {
-        ToggleTopmost(reinterpret_cast<HWND>(lParam));
-        return 1;
+        HWND target = GetActiveWindow();
+        if (!target) target = GetForegroundWindow();
+        ToggleTopmost(target);
+        return 1; // Consume the custom system-menu command.
     }
     return CallNextHookEx(g_cbtHook, code, wParam, lParam);
 }
